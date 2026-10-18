@@ -800,6 +800,8 @@ renderHTML( '#feed', await res.text() );
 
 The container can be an element or a CSS selector, and must be inside an island (`[data-wp-interactive]`) or carry its own `data-wp-interactive` attribute. Router regions are supported.
 
+`renderHTML()` returns `true` when the content was rendered and `false` when it was rejected, for example when no island is found or the mode is not supported for that container. The reason is logged to the console when `SCRIPT_DEBUG` is enabled.
+
 ### Modes
 
 The `mode` option controls where the parsed HTML is inserted:
