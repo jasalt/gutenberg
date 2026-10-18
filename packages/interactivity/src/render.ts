@@ -533,15 +533,25 @@ export function renderHTML(
 
 	const island = getTreeIsland( containerElement );
 	if ( ! island ) {
-		// No island around the container. If the HTML itself carries an
-		// interactive island, adopt it: place the parsed nodes per `mode`
-		// (raw DOM — no tree yet) and hydrate via the sanctioned first-render
-		// path (same as `hydrateRegions`). Otherwise warn + no-op.
-		const htmlIsland = nodes.find(
-			( node ): node is Element =>
-				node instanceof Element && node.hasAttribute( islandAttribute )
-		);
-		if ( ! htmlIsland ) {
+		// No island around the container. If the HTML itself carries
+		// interactive islands, adopt them: place the parsed nodes per `mode`
+		// (raw DOM — no tree yet) and hydrate each outermost island via the
+		// sanctioned first-render path (same as `hydrateRegions`). Islands
+		// may sit at the top level or inside plain wrappers; nested islands
+		// belong to their outer island's tree. Otherwise warn + no-op.
+		const htmlIslands = nodes.flatMap( ( node ) => {
+			if ( ! ( node instanceof Element ) ) {
+				return [];
+			}
+			if ( node.hasAttribute( islandAttribute ) ) {
+				return [ node ];
+			}
+			return Array.from( node.querySelectorAll( islandSelector ) ).filter(
+				( element ) =>
+					! element.parentElement?.closest( islandSelector )
+			);
+		} );
+		if ( ! htmlIslands.length ) {
 			warn(
 				'renderHTML(): no interactive island found for the container. The container must be inside a [data-wp-interactive] subtree or have its own data-wp-interactive attribute.'
 			);
@@ -568,10 +578,12 @@ export function renderHTML(
 			replace: 'replaceWith',
 		};
 		containerElement[ placementMethod[ mode ] ]( ...nodes );
-		hydrate(
-			toVdom( htmlIsland ) as VNode,
-			getRegionRootFragment( [ htmlIsland ] ) as ContainerNode
-		);
+		for ( const htmlIsland of htmlIslands ) {
+			hydrate(
+				toVdom( htmlIsland ) as VNode,
+				getRegionRootFragment( [ htmlIsland ] ) as ContainerNode
+			);
+		}
 		return;
 	}
 
