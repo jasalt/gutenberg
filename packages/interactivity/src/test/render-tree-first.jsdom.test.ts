@@ -559,13 +559,12 @@ describe( 'text nodes in mixed content', () => {
 		expect( parent.childNodes[ 3 ] ).toBe( t );
 		expect( ( parent.childNodes[ 4 ] as Text ).nodeValue ).toBe( ' tail' );
 
-		// Re-render the FIRST fragment (same HTML) via `inner`. `inner`
-		// gets no synthetic keys (wholesale swap — positional reuse is the
-		// desired default), and this content has no id, so everything
-		// matches positionally: the text nodes AND the span survive BY
-		// IDENTITY — recreating them would break caret/selection in live
-		// text. The second fragment (t/tail) is unmounted by the inner
-		// swap.
+		// Re-render the FIRST fragment (same HTML) via `inner`. Text nodes
+		// carry no key and match positionally, so they survive BY IDENTITY
+		// (recreating them would break caret/selection in live text). The
+		// span has no data-wp-key or id, so it gets a synthetic key and
+		// mounts fresh. The second fragment (t/tail) is unmounted by the
+		// inner swap.
 		const helloText = parent.childNodes[ 0 ];
 		const worldText = parent.childNodes[ 2 ];
 
@@ -578,7 +577,8 @@ describe( 'text nodes in mixed content', () => {
 		expect( parent.childNodes.length ).toBe( 3 );
 		expect( parent.childNodes[ 0 ] ).toBe( helloText );
 		expect( ( parent.childNodes[ 0 ] as Text ).nodeValue ).toBe( 'hello ' );
-		expect( parent.childNodes[ 1 ] ).toBe( s );
+		expect( parent.childNodes[ 1 ] ).not.toBe( s );
+		expect( parent.childNodes[ 1 ] ).toHaveTextContent( 'V' );
 		expect( parent.childNodes[ 2 ] ).toBe( worldText );
 		expect( ( parent.childNodes[ 2 ] as Text ).nodeValue ).toBe( ' world' );
 	} );
@@ -863,7 +863,7 @@ describe( 'data-wp-key and list identity across modes', () => {
 		expect( state.initCounts ).toEqual( { a: 1, b: 1, c: 1, b2: 1 } );
 	} );
 
-	it( 'KNOWN LIMITATION: unkeyed replace reuses the old element and swallows the replacement init (no synthetic on replace)', async () => {
+	it( 'unkeyed replace mounts the replacement fresh', async () => {
 		await setup(
 			`${ unkeyedItem( 'a', 'a' ) }${ unkeyedItem(
 				'b',
@@ -879,21 +879,19 @@ describe( 'data-wp-key and list identity across modes', () => {
 		renderHTML( bEl, unkeyedItem( 'b2', 'b2' ), { mode: 'replace' } );
 		await flush();
 
-		// `replace` gets no synthetic key (wholesale swap — positional
-		// reuse is the desired default) and this content has no id, so the
-		// replacement is diffed into the old element's component instance:
-		// the old element renders the new content and the new content's
-		// data-wp-init never runs. Give the replacement an id or
-		// data-wp-key to mount fresh.
+		// The replacement has no data-wp-key or id, so it gets a synthetic
+		// key and cannot be matched with the old element by position: it
+		// mounts fresh, with its own context and init. Its siblings keep
+		// their identity.
 		expect( [ ...feed.children ].map( ( c ) => c.textContent ) ).toEqual( [
 			'a',
 			'b2',
 			'c',
 		] );
 		expect( feed.children[ 0 ] ).toBe( aEl );
-		expect( feed.children[ 1 ] ).toBe( bEl );
+		expect( feed.children[ 1 ] ).not.toBe( bEl );
 		expect( feed.children[ 2 ] ).toBe( cEl );
-		expect( state.initCounts.b2 ).toBeUndefined();
+		expect( state.initCounts.b2 ).toBe( 1 );
 	} );
 
 	it( 'keyed inner mounts fresh', async () => {
@@ -911,7 +909,28 @@ describe( 'data-wp-key and list identity across modes', () => {
 		expect( state.initCounts ).toEqual( { a: 1, b: 1, z: 1 } );
 	} );
 
-	it( 'KNOWN LIMITATION: unkeyed inner reuses the old element and swallows the new content init (no synthetic on inner)', async () => {
+	it( 'unkeyed inner renders the new content with its own context', async () => {
+		// data-wp-context merges a new value into an existing client context
+		// without overwriting it, so reusing the old item by position would
+		// keep showing the old item's data.
+		await setup(
+			'<ul data-testid="list"><li data-wp-context=\'{ "id": "old" }\' data-wp-text="context.id"></li></ul>'
+		);
+		await flush();
+
+		renderHTML(
+			'[data-testid="list"]',
+			'<li data-wp-context=\'{ "id": "new" }\' data-wp-text="context.id"></li>',
+			{ mode: 'inner' }
+		);
+		await flush();
+
+		expect(
+			document.querySelector( '[data-testid="list"]' )
+		).toHaveTextContent( 'new' );
+	} );
+
+	it( 'unkeyed inner mounts the new content fresh', async () => {
 		await setup(
 			`${ unkeyedItem( 'a', 'a' ) }${ unkeyedItem( 'b', 'b' ) }`
 		);
@@ -922,14 +941,13 @@ describe( 'data-wp-key and list identity across modes', () => {
 		renderHTML( feed, unkeyedItem( 'z', 'z' ), { mode: 'inner' } );
 		await flush();
 
-		// `inner` gets no synthetic key (wholesale swap — positional reuse
-		// is the desired default) and this content has no id, so `a`'s
-		// element is reused for 'z' and the new content's data-wp-init
-		// never runs. Give the content an id or data-wp-key to mount fresh.
+		// The new content has no data-wp-key or id, so it gets a synthetic
+		// key: it mounts fresh instead of reusing `a`'s element, and its
+		// data-wp-init runs.
 		expect( feed.children.length ).toBe( 1 );
-		expect( feed.children[ 0 ] ).toBe( aEl );
-		expect( aEl ).toHaveTextContent( 'z' );
-		expect( state.initCounts.z ).toBeUndefined();
+		expect( feed.children[ 0 ] ).not.toBe( aEl );
+		expect( feed.children[ 0 ] ).toHaveTextContent( 'z' );
+		expect( state.initCounts.z ).toBe( 1 );
 	} );
 } );
 
@@ -965,7 +983,7 @@ describe( 'auto-keys (id + synthetic): cross-splice, refresh, and dedup behavior
 		expect( state.initCounts ).toEqual( { a: 1, b: 1, x: 1, y: 1 } );
 	} );
 
-	it( 'KNOWN LIMITATION: inner refresh after a synthetic prepend misattributes id-less items (use data-wp-key/id)', async () => {
+	it( 'KNOWN LIMITATION: inner refresh of id-less items remounts them all (use data-wp-key/id to keep identity)', async () => {
 		await setup(
 			`${ unkeyedItem( 'a', 'a' ) }${ unkeyedItem( 'b', 'b' ) }`
 		);
@@ -973,14 +991,13 @@ describe( 'auto-keys (id + synthetic): cross-splice, refresh, and dedup behavior
 		const feed = document.querySelector( '[data-wp-interactive]' )!;
 		renderHTML( feed, unkeyedItem( 'new', 'new' ), { mode: 'prepend' } );
 		await flush();
+		const newEl = feed.children[ 0 ];
 		const aEl = feed.children[ 1 ];
 		const bEl = feed.children[ 2 ];
 
-		// Re-fetch of the same three entities, refreshed via inner. The new
-		// side is unkeyed (inner gets no synthetic keys, and none of this
-		// content has an id). The old side has a SYNTHETIC-keyed hole at the
-		// front, so the positional scan steps over it and matches `new'`
-		// against `a`'s element: identity is misattributed (not just lost).
+		// Re-fetch of the same three entities, refreshed via inner. None of
+		// this content has a data-wp-key or id, so every item gets a fresh
+		// synthetic key and nothing matches the old items.
 		renderHTML(
 			feed,
 			`${ unkeyedItem( 'new', 'new' ) }${ unkeyedItem(
@@ -991,19 +1008,19 @@ describe( 'auto-keys (id + synthetic): cross-splice, refresh, and dedup behavior
 		);
 		await flush();
 
-		// Order/content is correct, but the elements are scrambled:
-		// `new`'s content now lives on `a`'s OLD element, `a`'s content on
-		// `b`'s old element, and `b` mounts fresh (its init re-runs — hence
-		// `b: 2`). `new` and `a` never re-init. This is the documented
-		// reason to put ids (or data-wp-key) on dynamic list content.
+		// Every item mounts fresh, with its own context and init: identity
+		// is lost, but never misattributed to another item's element. This
+		// is the documented reason to put ids (or data-wp-key) on dynamic
+		// list content.
 		expect( [ ...feed.children ].map( ( c ) => c.textContent ) ).toEqual( [
 			'new',
 			'a',
 			'b',
 		] );
-		expect( feed.children[ 0 ] ).toBe( aEl );
-		expect( feed.children[ 1 ] ).toBe( bEl );
-		expect( state.initCounts ).toEqual( { new: 1, a: 1, b: 2 } );
+		expect( feed.children[ 0 ] ).not.toBe( newEl );
+		expect( feed.children[ 1 ] ).not.toBe( aEl );
+		expect( feed.children[ 2 ] ).not.toBe( bEl );
+		expect( state.initCounts ).toEqual( { new: 2, a: 2, b: 2 } );
 	} );
 
 	it( 'KNOWN LIMITATION: same entity delivered twice duplicates when it has no stable key (no dedup)', async () => {
@@ -1148,7 +1165,7 @@ describe( 'auto-keys (id + synthetic): cross-splice, refresh, and dedup behavior
 		} );
 	} );
 
-	it( 'KNOWN LIMITATION (partial): mixed-tag refresh — data-wp-key and spliced-id items reuse, SSR-id and synthetic items do not', async () => {
+	it( 'KNOWN LIMITATION (partial): mixed-tag refresh — data-wp-key and spliced-id items reuse, SSR-id and id-less items remount', async () => {
 		await setup(
 			`${ item( 'a', 'a', 'a' ) }` + // data-wp-key → key 'a' in tree
 				`${ idItem( 'b', 'b' ) }` // SSR'd id → NO key in tree (ids are only read at splice time)
@@ -1186,23 +1203,23 @@ describe( 'auto-keys (id + synthetic): cross-splice, refresh, and dedup behavior
 		// - b' (SSR'd id) has key 'b', but the old b has NO key in
 		//   the tree (SSR ids aren't read at hydration) → no match:
 		//   b' mounts fresh, init re-runs (b: 2). ✗
-		// - d' (id-less) can't match the synthetic-keyed old d, so
-		//   the positional scan absorbs d' into the OLD b element
-		//   (the first unkeyed hole): identity misattributed, d's
-		//   init swallowed. The old d is unmounted. ✗
+		// - d' (id-less) gets a new synthetic key, which can't match
+		//   the old d's synthetic key: d' mounts fresh, init re-runs
+		//   (d: 2). The old d is unmounted. ✗
 		expect( [ ...feed.children ].map( ( c ) => c.textContent ) ).toEqual( [
 			'd',
 			'e',
 			'a',
 			'b',
 		] );
-		expect( feed.children[ 0 ] ).toBe( bEl ); // d' absorbed b's element
+		expect( feed.children[ 0 ] ).not.toBe( bEl ); // d' mounted fresh
 		expect( feed.children[ 1 ] ).toBe( eEl ); // e' reused e's element
 		expect( feed.children[ 2 ] ).toBe( aEl ); // a' reused a's element
+		expect( feed.children[ 3 ] ).not.toBe( bEl ); // b' mounted fresh
 		expect( state.initCounts ).toEqual( {
 			a: 1,
 			b: 2,
-			d: 1,
+			d: 2,
 			e: 1,
 		} );
 	} );

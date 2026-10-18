@@ -50,11 +50,11 @@ const syntheticKeyPrefix = 'wpiapi-synthetic-';
 // `data-wp-key` (already on `vnode.key`) wins, then the element's `id` (a
 // stable, server-visible name: refreshed HTML carrying the same id matches
 // the existing item — identity across refreshes, reorders, and duplicate
-// deliveries), then — for INSERTION modes only — a unique synthetic key so
-// the new item mounts fresh instead of being absorbed into the existing
-// item at its index (which would swallow the new item's data-wp-init and
-// re-run an existing item's). `inner`/`replace` get no synthetic key: they
-// are wholesale swaps where positional reuse is the desired default.
+// deliveries), then — when allowed — a unique synthetic key so the new item
+// mounts fresh instead of being absorbed into the existing item at its
+// index. Absorbing it would swallow the new item's data-wp-init, re-run an
+// existing item's, and keep the existing item's client context, because
+// data-wp-context merges new values without overwriting existing keys.
 // Directive-wrapped vnodes keep their real props in `originalProps`.
 const applyKeyFallback = ( vnode: any, allowSynthetic: boolean ): void => {
 	// Nullish on purpose: preact vnodes may carry key null (no key) or
@@ -261,24 +261,20 @@ const spliceIntoTree = (
 	newVdoms: ComponentChild[],
 	atIndex?: number
 ): void => {
-	// Key the new top-level vnodes so preact can tell them apart from the
 	// Key the new top-level vnodes (the direct children of the container).
-	// A user `data-wp-key` wins, then the element's `id`, then — for
-	// INSERTION modes only (prepend/before/after/at) — a unique synthetic
-	// key so the new item mounts fresh instead of being absorbed into the
-	// existing item at its index. `inner`/`replace` get no synthetic key:
-	// positional reuse is the desired default for wholesale swaps. Text
-	// nodes are plain strings and are skipped.
-	const indexShifting =
-		mode === 'prepend' ||
-		mode === 'before' ||
-		mode === 'after' ||
-		mode === 'at';
+	// A user `data-wp-key` wins, then the element's `id`, then a unique
+	// synthetic key so the new item mounts fresh instead of being matched
+	// by position with an existing item. That covers the index-shifting
+	// modes and the `inner`/`replace` swaps, where positional reuse would
+	// keep the old item's state, client context and init. Only `append`
+	// needs no synthetic key: its new items land after every existing one.
+	// Text nodes are plain strings and are skipped.
+	const allowSynthetic = mode !== 'append';
 	for ( const vdom of newVdoms ) {
 		if ( ! vdom || typeof vdom !== 'object' ) {
 			continue;
 		}
-		applyKeyFallback( vdom as any, indexShifting );
+		applyKeyFallback( vdom as any, allowSynthetic );
 	}
 
 	const fragment = getRegionRootFragment( [ island ] ) as any;
@@ -477,12 +473,11 @@ const spliceIntoTree = (
  * `data-wp-each-child` content and `<template>` elements.
  *
  * List identity: items are matched by key — a user `data-wp-key` wins, then
- * the element's `id`, and (for `prepend`/`before`/`after` only) an
- * auto-generated key as a last resort, so inserting new content never
- * disrupts existing items. `append` is safe with no keys at all.
- * `inner`/`replace` reuse existing elements by position, so same-shape
- * content keeps its state; give items `data-wp-key` (or rely on `id`) when
- * you need identity across refreshes, reorders, or duplicate deliveries.
+ * the element's `id`, and (in every mode except `append`) an auto-generated
+ * key as a last resort, so new content never takes over an existing item's
+ * element, state or context. `append` is safe with no keys at all. Give
+ * items `data-wp-key` (or rely on `id`) when you need identity across
+ * refreshes, reorders, or duplicate deliveries.
  *
  * @param container    The element the parsed HTML is inserted into, or a CSS
  *                     selector for it (resolved via `document.querySelector`).
