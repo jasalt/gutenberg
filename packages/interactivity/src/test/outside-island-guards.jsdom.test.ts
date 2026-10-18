@@ -1,24 +1,14 @@
 /**
- * RED probes — outside-island hydration + island-root guards.
+ * Outside-island hydration and island-root guards.
  *
- * Current behavior (to be fixed):
- * 1. `renderHTML` into a container with NO island around it warns + no-ops
- *    even when the HTML itself carries `data-wp-interactive` at its root —
- *    the HTML's island is never hydrated.
- * 2. `mode: 'replace'` at the island root with HTML lacking
- *    `data-wp-interactive` is allowed — the fragment's tree root becomes a
- *    non-island element, ORPHANING the tree (subsequent renderHTML calls
- *    can't find an island).
- *
- * The fix (plan §8 next-up task 1):
- * - No island + HTML root with `data-wp-interactive` → append the parsed
- *   nodes and hydrate the HTML's island via the sanctioned first-render
- *   path (the fragment's first render matches pre-existing DOM — the same
- *   path `hydrateRegions` uses); subsequent splices target the island
- *   normally.
- * - Island-root `replace` requires the new content to carry an island;
- *   otherwise warn + no-op.
- * - Island-root `before`/`after` already warn (guard exists — add tests).
+ * - No island around the container + HTML carrying `data-wp-interactive` →
+ *   the parsed nodes are placed per `mode` and the HTML's island is
+ *   hydrated via the first-render path (the same path `hydrateRegions`
+ *   uses); subsequent splices target the island normally. Without an
+ *   island in the HTML, renderHTML warns and does nothing.
+ * - Island-root `replace` requires the new content to carry an island, so
+ *   the fragment's tree is never orphaned; otherwise warn + no-op.
+ * - Island-root `before`/`after` warn + no-op.
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -65,7 +55,7 @@ afterEach( () => {
 /* eslint-enable @wordpress/wp-global-usage */
 
 describe( 'renderHTML outside any island', () => {
-	it( 'RED: hydrates an HTML island into a container that has no island around it', async () => {
+	it( 'hydrates an HTML island into a container that has no island around it', async () => {
 		document.body.innerHTML = '<div data-testid="host"></div>';
 		const host = document.querySelector( '[data-testid="host"]' )!;
 
@@ -105,7 +95,7 @@ describe( 'renderHTML outside any island', () => {
 		expect( txt?.textContent ).toBe( 'changed' );
 	} );
 
-	it( 'GREEN guard: warns and does nothing when there is no island and the HTML has no island', async () => {
+	it( 'warns and does nothing when there is no island and the HTML has no island', async () => {
 		// eslint-disable-next-line @wordpress/wp-global-usage
 		( globalThis as { SCRIPT_DEBUG?: boolean } ).SCRIPT_DEBUG = true;
 		document.body.innerHTML = '<div data-testid="host"></div>';
@@ -216,7 +206,7 @@ describe( 'HTML-island fallback honors mode', () => {
 } );
 
 describe( 'renderHTML at the island root', () => {
-	it( 'RED: replacing the island root with non-island HTML warns and does nothing', async () => {
+	it( 'replacing the island root with non-island HTML warns and does nothing', async () => {
 		// eslint-disable-next-line @wordpress/wp-global-usage
 		( globalThis as { SCRIPT_DEBUG?: boolean } ).SCRIPT_DEBUG = true;
 		document.body.innerHTML = `
