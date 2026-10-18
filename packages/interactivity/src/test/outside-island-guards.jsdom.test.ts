@@ -323,6 +323,31 @@ describe( 'renderHTML at the island root', () => {
 		expect( txt?.textContent ).toBe( 'changed' );
 	} );
 
+	it( 'replacing the island root with an island that has other directives works', async () => {
+		// The new root carries data-wp-context, so its vnode is a Directives
+		// wrapper with the attributes in `originalProps`.
+		document.body.innerHTML = `
+			<div data-wp-interactive="${ NS }" data-testid="island">
+				<span data-wp-text="state.text">initial</span>
+			</div>
+		`;
+		await flush();
+
+		renderHTML(
+			'[data-testid="island"]',
+			`<section data-wp-interactive="${ NS }" data-wp-context='{ "label": "ctx" }' data-testid="island2">
+				<span data-testid="txt" data-wp-text="context.label">initial</span>
+			</section>`,
+			{ mode: 'replace' }
+		);
+		await flush();
+
+		expect( document.querySelector( '[data-testid="island"]' ) ).toBeNull();
+		expect(
+			document.querySelector( '[data-testid="txt"]' )?.textContent
+		).toBe( 'ctx' );
+	} );
+
 	it( 'warns and does nothing when inserting before/after the island root', async () => {
 		// eslint-disable-next-line @wordpress/wp-global-usage
 		( globalThis as { SCRIPT_DEBUG?: boolean } ).SCRIPT_DEBUG = true;

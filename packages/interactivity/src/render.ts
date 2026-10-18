@@ -354,12 +354,19 @@ const spliceIntoTree = (
 				// would ORPHAN the fragment — subsequent renderHTML calls
 				// could not find an island for the container. Warn and leave
 				// the tree untouched.
-				const keepsIsland = newVdoms.some(
-					( v ) =>
-						typeof v === 'object' &&
-						v !== null &&
-						( v as any ).props?.[ islandAttribute ] !== undefined
-				);
+				// A vnode with directives is a `Directives` wrapper that keeps
+				// the element's attributes in `originalProps`.
+				const keepsIsland = newVdoms.some( ( v ) => {
+					if ( typeof v !== 'object' || v === null ) {
+						return false;
+					}
+					const props = ( v as any ).props;
+					return (
+						( props?.originalProps ?? props )?.[
+							islandAttribute
+						] !== undefined
+					);
+				} );
 				if ( ! keepsIsland ) {
 					warn(
 						'renderHTML(): replacing the island root with content that has no data-wp-interactive attribute would orphan the tree. The content was not rendered.'
