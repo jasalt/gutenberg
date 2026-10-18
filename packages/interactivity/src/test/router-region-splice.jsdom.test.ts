@@ -22,13 +22,15 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { h, type VNode } from 'preact';
+import { createElement, h, type VNode } from 'preact';
 import '../directives'; // Registers all the core directives.
 import { store } from '../store';
 import { renderHTML } from '../render';
 import { hydrateRegions } from '../hydration';
 import { routerRegions } from '../directives/router-region';
 import { Directives } from '../hooks';
+import { toVdom } from '../vdom';
+import { navigationContextSignal } from '../scopes';
 
 const NS = 'test/router-region-splice';
 
@@ -296,5 +298,53 @@ describe( 'renderHTML into a router region (after a navigation)', () => {
 		) as HTMLButtonElement;
 		expect( y ).not.toBeNull();
 		expect( y ).toHaveTextContent( '0' );
+	} );
+} );
+
+describe( 'renderHTML into a navigated region with other directives', () => {
+	// The region element carries data-wp-context besides the router-region
+	// directive, so the router stores a Directives vnode in the signal (the
+	// levels after router-region), not a plain element vnode.
+	const regionHtml = ( text: string ) =>
+		`<div data-testid="region" data-wp-router-region="test-r-ctx" data-wp-context='{ "a": 1 }'><p>${ text }</p></div>`;
+
+	// Same shape as the router's `cloneRouterRegionContent( page.regions[ id ] )`.
+	const navigate = () => {
+		const template = document.createElement( 'template' );
+		template.innerHTML = regionHtml( 'navigated' );
+		const vdom: any = toVdom( template.content.firstElementChild!, NS );
+		const levels: string[][] = vdom.props.priorityLevels;
+		const index = levels.findIndex( ( level ) =>
+			level.includes( 'router-region' )
+		);
+		routerRegions.get( 'test-r-ctx' )!.value = createElement( vdom.type, {
+			...vdom.props,
+			priorityLevels: levels.slice( index + 1 ),
+		} ) as VNode;
+	};
+
+	it( 'does not invalidate the server context like a navigation does', async () => {
+		document.body.innerHTML = `<div data-wp-interactive="${ NS }">${ regionHtml(
+			'ssr'
+		) }</div>`;
+		await hydrateRegions();
+		await flush();
+
+		const beforeNavigation = navigationContextSignal.peek();
+		navigate();
+		await flush();
+		// A navigation invalidates the server context.
+		expect( navigationContextSignal.peek() ).toBeGreaterThan(
+			beforeNavigation
+		);
+
+		const beforeSplice = navigationContextSignal.peek();
+		renderHTML( '[data-testid="region"]', '<p>spliced</p>' );
+		await flush();
+
+		expect(
+			document.querySelector( '[data-testid="region"]' )?.textContent
+		).toBe( 'navigatedspliced' );
+		expect( navigationContextSignal.peek() ).toBe( beforeSplice );
 	} );
 } );
