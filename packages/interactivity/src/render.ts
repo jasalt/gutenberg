@@ -261,13 +261,14 @@ const writeRegionSignal = ( wrapper: any, regionVnode: any ): void => {
  * @param container The element the mode is relative to.
  * @param mode      Insert mode.
  * @param newVdoms  The vnodes to insert.
+ * @return Whether the content was rendered (`false` when a guard warned).
  */
 const spliceIntoTree = (
 	island: Element,
 	container: Element,
 	mode: Mode,
 	newVdoms: ComponentChild[]
-): void => {
+): boolean => {
 	// Key the new top-level vnodes (the direct children of the container).
 	// A user `data-wp-key` wins, then the element's `id`, then a unique
 	// synthetic key so the new item mounts fresh instead of being matched
@@ -298,7 +299,7 @@ const spliceIntoTree = (
 		warn(
 			'renderHTML(): the island tree could not be found. Is the island hydrated?'
 		);
-		return;
+		return false;
 	}
 
 	// The fragment's root is Preact's artificial Fragment wrapper; the island
@@ -312,7 +313,7 @@ const spliceIntoTree = (
 		warn(
 			'renderHTML(): the container could not be located in the island tree. Is it inside a data-wp-each list or a template?'
 		);
-		return;
+		return false;
 	}
 
 	let current: any;
@@ -378,13 +379,13 @@ const spliceIntoTree = (
 					warn(
 						'renderHTML(): replacing the island root with content that has no data-wp-interactive attribute would orphan the tree. The content was not rendered.'
 					);
-					return;
+					return false;
 				}
 				render( newRoot as VNode, fragment as ContainerNode );
-				return;
+				return true;
 			}
 			warn( 'renderHTML(): cannot insert before/after the island root.' );
-			return;
+			return false;
 		}
 
 		const parentChildren = vdomChildren( parent );
@@ -393,7 +394,7 @@ const spliceIntoTree = (
 			warn(
 				'renderHTML(): could not locate the container among its siblings.'
 			);
-			return;
+			return false;
 		}
 		let newChildren: ComponentChild[];
 		if ( mode === 'before' ) {
@@ -448,6 +449,7 @@ const spliceIntoTree = (
 		}
 	}
 	render( current, fragment as ContainerNode );
+	return true;
 };
 
 /**
@@ -492,6 +494,9 @@ const spliceIntoTree = (
  *                     - `after`: as siblings immediately after the container
  *                     - `inner`: replace the container's children
  *                     - `replace`: replace the container itself
+ * @return Whether the content was rendered. `false` means a guard rejected
+ *         the call (no island, an unsupported container or mode); the
+ *         reason is logged when `SCRIPT_DEBUG` is enabled.
  */
 export function renderHTML(
 	container: Element | string,
@@ -501,7 +506,7 @@ export function renderHTML(
 	}: {
 		mode?: Mode;
 	} = {}
-): void {
+): boolean {
 	// Resolve a CSS selector to its element, if one was passed.
 	const containerElement =
 		typeof container === 'string'
@@ -526,7 +531,8 @@ export function renderHTML(
 	// container and `replace` still removes it (like `innerHTML = ''` and
 	// `remove()`), e.g. for a server response that clears a list.
 	if ( ! nodes.length && mode !== 'inner' && mode !== 'replace' ) {
-		return;
+		// Nothing to render.
+		return true;
 	}
 
 	const island = getTreeIsland( containerElement );
@@ -553,7 +559,7 @@ export function renderHTML(
 			warn(
 				'renderHTML(): no interactive island found for the container. The container must be inside a [data-wp-interactive] subtree or have its own data-wp-interactive attribute.'
 			);
-			return;
+			return false;
 		}
 		// The mode name IS the native DOM insertion method, except `inner`
 		// (`replaceChildren`) and `replace` (`replaceWith`).
@@ -580,7 +586,7 @@ export function renderHTML(
 				getRegionRootFragment( [ htmlIsland ] ) as ContainerNode
 			);
 		}
-		return;
+		return true;
 	}
 
 	// Build the vdom DETACHED, inheriting the NEAREST island's namespace so
@@ -591,5 +597,5 @@ export function renderHTML(
 	const namespace = getIslandNamespace( namespaceIsland );
 	const vdoms = nodes.map( ( node ) => toVdom( node, namespace ) );
 
-	spliceIntoTree( island, containerElement, mode, vdoms );
+	return spliceIntoTree( island, containerElement, mode, vdoms );
 }

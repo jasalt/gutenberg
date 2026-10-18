@@ -380,3 +380,40 @@ describe( 'renderHTML at the island root', () => {
 		( globalThis as { SCRIPT_DEBUG?: boolean } ).SCRIPT_DEBUG = false;
 	} );
 } );
+
+describe( 'renderHTML return value', () => {
+	it( 'returns true when the content is rendered', async () => {
+		document.body.innerHTML = `<div data-wp-interactive="${ NS }"><div data-testid="feed"></div></div>`;
+		expect( renderHTML( '[data-testid="feed"]', '<p>a</p>' ) ).toBe( true );
+		expect(
+			renderHTML( '[data-testid="feed"]', '<p>b</p>', { mode: 'inner' } )
+		).toBe( true );
+	} );
+
+	it( 'returns true when an island in the HTML is hydrated outside any island', async () => {
+		document.body.innerHTML = '<div data-testid="host"></div>';
+		expect(
+			renderHTML(
+				'[data-testid="host"]',
+				`<div data-wp-interactive="${ NS }"></div>`
+			)
+		).toBe( true );
+	} );
+
+	it( 'returns false when a guard rejects the call, even without SCRIPT_DEBUG', async () => {
+		document.body.innerHTML = `
+			<div data-testid="host"></div>
+			<div data-wp-interactive="${ NS }" data-testid="island"></div>
+		`;
+		// No island around the container and none in the HTML.
+		expect( renderHTML( '[data-testid="host"]', '<p>plain</p>' ) ).toBe(
+			false
+		);
+		// Unsupported mode for the island root.
+		expect(
+			renderHTML( '[data-testid="island"]', '<p>x</p>', {
+				mode: 'before',
+			} )
+		).toBe( false );
+	} );
+} );
