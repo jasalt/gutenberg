@@ -116,8 +116,8 @@ export function parseDirectiveValue( rawValue: string ): {
  *
  * @param root               The root element or node to start traversing on.
  * @param inheritedNamespace Namespace to inherit for directives on elements
- *                           without an enclosing
- *                           attribute. Used by  when building
+ *                           without an enclosing `data-wp-interactive`
+ *                           attribute. Used by `renderHTML` when building
  *                           vDOM from detached markup that is inserted into
  *                           an existing island.
  * @return The resulting vDOM tree.
