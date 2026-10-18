@@ -10,7 +10,10 @@ import {
 import { toVdom } from './vdom';
 import { Directives, elementToVnode, isDefaultDirectiveSuffix } from './hooks';
 import { getRegionRootFragment } from './hydration';
-import { routerRegions } from './directives/router-region';
+import {
+	routerRegions,
+	splicedRegionContents,
+} from './directives/router-region';
 import { warn } from './utils';
 
 /**
@@ -239,6 +242,9 @@ const writeRegionSignal = ( wrapper: any, regionVnode: any ): void => {
 	}
 	const signal = routerRegions.get( regionId );
 	if ( signal && signal.value ) {
+		// Not a navigation: keep the region from invalidating the server
+		// context (and every `getServerContext()` consumer on the page).
+		splicedRegionContents.add( regionVnode );
 		signal.value = regionVnode;
 	}
 };

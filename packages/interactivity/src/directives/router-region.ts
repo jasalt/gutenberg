@@ -22,6 +22,14 @@ export const routerRegions = new Map<
 	Signal< VNode | null | undefined >
 >();
 
+/**
+ * Region contents written into a region signal by `renderHTML` (a splice
+ * into a navigated region), as opposed to a navigation. They must not
+ * trigger the navigation invalidation below: the server context did not
+ * change.
+ */
+export const splicedRegionContents = new WeakSet< VNode >();
+
 // data-wp-router-region — Router region management.
 directive(
 	'router-region',
@@ -60,7 +68,11 @@ directive(
 		// Triggers an invalidation after the directive data-wp-context has
 		// been evaluated and the value of the server context has changed.
 		useLayoutEffect( () => {
-			if ( vdom && typeof vdom.type !== 'string' ) {
+			if (
+				vdom &&
+				typeof vdom.type !== 'string' &&
+				! splicedRegionContents.has( vdom )
+			) {
 				navigationContextSignal.value =
 					navigationContextSignal.peek() + 1;
 			}
