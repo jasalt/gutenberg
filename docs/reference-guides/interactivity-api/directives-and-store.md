@@ -707,7 +707,7 @@ When the list is re-rendered, the Interactivity API will match elements by their
 
 The key only needs to be unique among its **siblings** (the items of the same list). Two elements in different lists may share a key value without issue.
 
-When content is added dynamically with [`renderHTML()`](#renderhtml), elements without `data-wp-key` fall back to their `id` attribute as the key, and — for insertion modes — to an auto-generated key, so adding new items never disrupts the existing ones.
+When content is added dynamically with [`renderHTML()`](#renderhtml), elements without `data-wp-key` fall back to their `id` attribute as the key, and — in every mode except `append` — to an auto-generated key, so new content never takes over an existing element.
 
 Router navigation matches region content by key too: `data-wp-key` items that don't match anything in the current tree mount fresh, while unkeyed items are matched by position and keep their state. The `id` fallback applies to `renderHTML()` only, so the router does not read `id` as a key.
 
@@ -817,15 +817,15 @@ When the new content contains repeated elements, the Interactivity API matches t
 
 1. An explicit `data-wp-key` attribute wins.
 2. Otherwise, the element's `id` attribute is used as the key.
-3. For insertion modes (`prepend`, `before`, `after`), items with neither `data-wp-key` or `id` will get an auto-generated key, so inserting new content never disrupts existing items — they keep their state and their `data-wp-init` callbacks don't re-run.
+3. In every mode except `append`, items with neither `data-wp-key` nor `id` get an auto-generated key. Inserted content never disrupts existing items (they keep their state and their `data-wp-init` callbacks don't re-run), and content that replaces existing items in `inner` and `replace` mounts fresh, with its own context and `data-wp-init`.
 
-`append` is safe without any keys. `inner` and `replace` reuse existing elements by position, so same-shape content keeps its state across refreshes; to keep identity across a refresh, the refreshed content must carry the same `data-wp-key` (or `id`) as the current items.
+`append` is safe without any keys. To keep an item's element and client state across an `inner` or `replace` refresh, the refreshed content must carry the same `data-wp-key` (or `id`) as the current item.
 
 Safest is to always add a `data-wp-key` to the content you inject with `renderHTML()` and to the server-rendered content it joins — the `id` fallback and auto-generated keys are conveniences, not substitutes. Testing is recommended if you rely on the fallbacks.
 
 #### Known limitations
 
-- **Unkeyed refreshes reuse elements, so the new content's init doesn't run.** `inner`/`replace` match content by position when it has no `data-wp-key`/`id`: the existing element is reused and the new content's `data-wp-init` doesn't fire. Content with a key that matches nothing in the current tree mounts fresh (`data-wp-init` runs, state resets) — this includes server-rendered items refreshed with keyed content, and items previously inserted with only an auto-generated key (the auto key is created fresh on every parse, so it can never match an earlier parse's item).
+- **Unkeyed refreshes remount.** `inner`/`replace` content without `data-wp-key`/`id` never matches the current items, so it mounts fresh (`data-wp-init` runs, client state resets). The same happens to content with a key that matches nothing in the current tree — this includes server-rendered items refreshed with keyed content, and items previously inserted with only an auto-generated key (the auto key is created fresh on every parse, so it can never match an earlier parse's item).
 - **Duplicate deliveries are not deduplicated.** If the same entity arrives twice (e.g. a push race), a second copy is rendered — even with a matching `data-wp-key`/`id`. The key distinguishes items; it does not merge duplicates.
 
 ## Values of directives are references to store properties
