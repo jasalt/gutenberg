@@ -1,7 +1,11 @@
 import { cloneElement, type VNode } from 'preact';
 import { useLayoutEffect } from 'preact/hooks';
 import { signal, type Signal } from '@preact/signals';
-import { directive, isDefaultDirectiveSuffix } from '../hooks';
+import {
+	directive,
+	isDefaultDirectiveSuffix,
+	type DirectiveEntry,
+} from '../hooks';
 import { getScope, navigationContextSignal } from '../scopes';
 import {
 	warnSuffixNotSupported,
@@ -21,6 +25,16 @@ export const routerRegions = new Map<
 	string,
 	Signal< VNode | null | undefined >
 >();
+
+/**
+ * Returns the region ID of a `router-region` directive entry: the value
+ * itself when it is a string, or its `id` property.
+ *
+ * @param entry The directive entry.
+ * @return The region ID.
+ */
+export const getRegionId = ( entry: DirectiveEntry ): string =>
+	typeof entry.value === 'string' ? entry.value : ( entry.value as any )?.id;
 
 // data-wp-router-region — Router region management.
 directive(
@@ -45,10 +59,7 @@ directive(
 			return;
 		}
 
-		const regionId =
-			typeof entry.value === 'string'
-				? entry.value
-				: ( entry.value as any ).id;
+		const regionId = getRegionId( entry );
 
 		if ( ! routerRegions.has( regionId ) ) {
 			routerRegions.set( regionId, signal() );

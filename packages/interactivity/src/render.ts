@@ -7,10 +7,10 @@ import {
 	type ContainerNode,
 	type VNode,
 } from 'preact';
-import { toVdom } from './vdom';
+import { parseDirectiveValue, toVdom } from './vdom';
 import { Directives, elementToVnode, isDefaultDirectiveSuffix } from './hooks';
 import { getRegionRootFragment } from './hydration';
-import { routerRegions } from './directives/router-region';
+import { getRegionId, routerRegions } from './directives/router-region';
 import { warn } from './utils';
 
 /**
@@ -74,8 +74,8 @@ const applyKeyFallback = ( vnode: any, allowSynthetic: boolean ): void => {
 
 /**
  * Returns the OUTERMOST `data-wp-interactive` boundary — the island whose
- * tree owns the element's subtree. Nested islands belong to the outer
- * island's tree (its `toVdom` walk claims them via `hydratedIslands`), so
+ * tree owns the element's subtree. `hydrateRegions` only hydrates outermost
+ * islands and nested ones render as part of the outer island's tree, so
  * spliced content must go through the outermost tree. Returns `null` if
  * there is no island.
  *
@@ -97,32 +97,21 @@ const getTreeIsland = ( element: Element ): Element | null => {
 };
 
 /**
- * Parses an island's `data-wp-interactive` value into its namespace, using
- * the same rules as `vdom.ts`: a plain string verbatim, a JSON object's
- * `namespace` string, anything else `null`.
+ * Parses an island's `data-wp-interactive` value into its namespace, with
+ * the same parser and rules as `toVdom`: a plain string verbatim, an
+ * object's `namespace` string, anything else `null`.
  *
  * @param island The island element.
  * @return The island's namespace, or `null`.
  */
 const getIslandNamespace = ( island: Element ): string | null => {
-	const value = island.getAttribute( islandAttribute );
-	if ( value === null ) {
-		return null;
+	const { value } = parseDirectiveValue(
+		island.getAttribute( islandAttribute ) ?? ''
+	);
+	if ( typeof value === 'string' ) {
+		return value;
 	}
-	let parsed: any = value;
-	try {
-		const json = JSON.parse( value );
-		if ( json && typeof json === 'object' && ! Array.isArray( json ) ) {
-			parsed = json;
-		}
-	} catch {}
-	if ( typeof parsed === 'string' ) {
-		return parsed;
-	}
-	if ( typeof parsed?.namespace === 'string' ) {
-		return parsed.namespace;
-	}
-	return null;
+	return typeof value?.namespace === 'string' ? value.namespace : null;
 };
 
 /**
@@ -230,10 +219,7 @@ const writeRegionSignal = ( wrapper: any, regionVnode: any ): void => {
 	if ( ! entry || entry.uniqueId ) {
 		return;
 	}
-	const regionId =
-		typeof entry.value === 'string'
-			? entry.value
-			: ( entry.value as any )?.id;
+	const regionId = getRegionId( entry );
 	if ( ! regionId ) {
 		return;
 	}
@@ -252,28 +238,22 @@ const writeRegionSignal = ( wrapper: any, regionVnode: any ): void => {
  * @param container The element the mode is relative to.
  * @param mode      Insert mode.
  * @param newVdoms  The vnodes to insert.
- * @param atIndex   For `mode: 'at'` — the child index to insert at.
  */
 const spliceIntoTree = (
 	island: Element,
 	container: Element,
-	mode: Mode | 'at',
-	newVdoms: ComponentChild[],
-	atIndex?: number
+	mode: Mode,
+	newVdoms: ComponentChild[]
 ): void => {
-	// Key the new top-level vnodes so preact can tell them apart from the
 	// Key the new top-level vnodes (the direct children of the container).
 	// A user `data-wp-key` wins, then the element's `id`, then — for
-	// INSERTION modes only (prepend/before/after/at) — a unique synthetic
+	// INSERTION modes only (prepend/before/after) — a unique synthetic
 	// key so the new item mounts fresh instead of being absorbed into the
 	// existing item at its index. `inner`/`replace` get no synthetic key:
 	// positional reuse is the desired default for wholesale swaps. Text
 	// nodes are plain strings and are skipped.
 	const indexShifting =
-		mode === 'prepend' ||
-		mode === 'before' ||
-		mode === 'after' ||
-		mode === 'at';
+		mode === 'prepend' || mode === 'before' || mode === 'after';
 	for ( const vdom of newVdoms ) {
 		if ( ! vdom || typeof vdom !== 'object' ) {
 			continue;
@@ -305,7 +285,7 @@ const spliceIntoTree = (
 	const path = getPathTo( treeRoot, container );
 	if ( ! path || path.length === 0 ) {
 		warn(
-			'renderHTML(): the container could not be located in the island tree. Is it inside a router region, a data-wp-each list, or a template?'
+			'renderHTML(): the container could not be located in the island tree. Is it inside a data-wp-each list or a template?'
 		);
 		return;
 	}
@@ -314,14 +294,8 @@ const spliceIntoTree = (
 	let chainElement: any;
 	let startIdx: number;
 
-	if (
-		mode === 'inner' ||
-		mode === 'append' ||
-		mode === 'prepend' ||
-		mode === 'at'
-	) {
-		// Splice into the container's own children. `at` inserts at a specific
-		// child index (used by the future MutationObserver's cut-and-reinsert).
+	if ( mode === 'inner' || mode === 'append' || mode === 'prepend' ) {
+		// Splice into the container's own children.
 		const target = path[ path.length - 1 ];
 		const oldChildren = vdomChildren( target );
 		let newChildren: ComponentChild[];
@@ -329,16 +303,8 @@ const spliceIntoTree = (
 			newChildren = newVdoms;
 		} else if ( mode === 'append' ) {
 			newChildren = [ ...oldChildren, ...newVdoms ];
-		} else if ( mode === 'prepend' ) {
-			newChildren = [ ...newVdoms, ...oldChildren ];
 		} else {
-			// 'at'
-			const idx = atIndex ?? oldChildren.length;
-			newChildren = [
-				...oldChildren.slice( 0, idx ),
-				...newVdoms,
-				...oldChildren.slice( idx ),
-			];
+			newChildren = [ ...newVdoms, ...oldChildren ];
 		}
 		startIdx = path.length - 2;
 		current = h( target.type, {
@@ -348,7 +314,7 @@ const spliceIntoTree = (
 		} );
 		chainElement = current;
 	} else {
-		// before / after / replace / at: splice into the container's parent's
+		// before / after / replace: splice into the container's parent's
 		// children, next to the container's rendered chain root. Climb past
 		// component wrappers (Directives/Provider) — a directive-wrapped
 		// element is rendered alone by its chain, so its siblings live at the
@@ -494,9 +460,7 @@ const spliceIntoTree = (
  *                     - `before`: as siblings immediately before the container
  *                     - `after`: as siblings immediately after the container
  *                     - `inner`: replace the container's children
- *                     - `replace`: replace the container itself (the
- *                     datastar `outer` analog is a morph; ours is a hard
- *                     replace, so `outer` would mislead)
+ *                     - `replace`: replace the container itself
  */
 export function renderHTML(
 	container: Element | string,
@@ -548,9 +512,7 @@ export function renderHTML(
 			return;
 		}
 		// The mode name IS the native DOM insertion method, except `inner`
-		// (`replaceChildren`) and `replace` (`replaceWith`) — dispatch
-		// dynamically through a mode→method map (datastar's patchElements
-		// pattern) instead of an if/else chain.
+		// (`replaceChildren`) and `replace` (`replaceWith`).
 		const placementMethod: Record<
 			Mode,
 			| 'append'
