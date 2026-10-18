@@ -8,7 +8,7 @@ import {
 	type VNode,
 } from 'preact';
 import { parseDirectiveValue, toVdom } from './vdom';
-import { Directives, elementToVnode, isDefaultDirectiveSuffix } from './hooks';
+import { Directives, isDefaultDirectiveSuffix } from './hooks';
 import { getRegionRootFragment } from './hydration';
 import { getRegionId, routerRegions } from './directives/router-region';
 import { warn } from './utils';
@@ -27,10 +27,9 @@ import { warn } from './utils';
 
 type Mode = 'append' | 'prepend' | 'before' | 'after' | 'inner' | 'replace';
 
-// Preact internal property accessors: `__k` is a vnode's children,
-// `__` its parent pointer.
+// Preact internal property accessor: `__k` is a vnode's rendered children
+// (`__e`, read in getPathTo, is its DOM node).
 const vdomChildren = ( vnode: any ): any[] => vnode?.__k ?? [];
-const vdomParent = ( vnode: any ): any => vnode?.__ ?? null;
 
 // A rendered container (fragment) stores its tree as a single Fragment vnode
 // on the same property names — NOT as an array.
@@ -115,33 +114,50 @@ const getIslandNamespace = ( island: Element ): string | null => {
 };
 
 /**
- * Locates the container's vnode via the element→vnode map (O(1)) and walks
- * up each vnode's `_parent` pointer to the tree root, collecting the path
- * (root → container, inclusive). O(depth), independent of island size.
+ * Finds the path of vnodes from the tree root down to the vnode that
+ * rendered `target` (root → container, inclusive) by walking the current
+ * rendered tree. Element vnodes are only entered when their DOM node is an
+ * ancestor of `target`; component vnodes (Directives, Provider, Fragment)
+ * have no DOM node of their own and are always entered. The cost is
+ * O(depth × siblings), the same order as the path rebuild that follows,
+ * and nothing has to be recorded during regular renders.
  *
- * No per-step connectivity check: every splice rebuilds the root as a NEW
- * vnode, so a stale map entry (removed + re-inserted element) chains to an
- * old root and is rejected by the final `vnode !== root` comparison.
+ * Because the walk starts at the current root, an element that is in the
+ * DOM but not in the tree (e.g. removed by a splice and re-inserted with
+ * raw DOM calls) is never found.
  *
  * @param root   The tree root vnode (the island vnode).
  * @param target The container element.
  * @return The path of vnodes from the root to the container, or `null`.
  */
 const getPathTo = ( root: any, target: Element ): any[] | null => {
-	let vnode = elementToVnode.get( target );
-	if ( ! vnode ) {
-		return null;
+	const ancestors = new Set< Node >();
+	for ( let node: Node | null = target; node; node = node.parentNode ) {
+		ancestors.add( node );
 	}
 	const reversed: any[] = [];
-	while ( vnode && vnode !== root ) {
-		reversed.push( vnode );
-		vnode = vdomParent( vnode );
-	}
-	if ( vnode !== root ) {
-		return null;
-	}
-	reversed.push( root );
-	return reversed.reverse();
+	const walk = ( vnode: any ): boolean => {
+		if ( typeof vnode.type === 'string' ) {
+			if ( vnode.__e === target ) {
+				reversed.push( vnode );
+				return true;
+			}
+			if ( ! ancestors.has( vnode.__e ) ) {
+				return false;
+			}
+		} else if ( typeof vnode.type !== 'function' ) {
+			// Text vnodes.
+			return false;
+		}
+		for ( const child of vdomChildren( vnode ) ) {
+			if ( child && walk( child ) ) {
+				reversed.push( vnode );
+				return true;
+			}
+		}
+		return false;
+	};
+	return walk( root ) ? reversed.reverse() : null;
 };
 
 /**
@@ -277,8 +293,8 @@ const spliceIntoTree = (
 	}
 
 	// The fragment's root is Preact's artificial Fragment wrapper; the island
-	// vnode is its only child. Locate the container via the element→vnode
-	// map + `_parent` pointers so the path is [island, ..., container] — never
+	// vnode is its only child. Locate the container from the island vnode
+	// down so the path is [island, ..., container] — never
 	// includes the wrapper (rebuilding it would nest a Fragment that cannot
 	// type-match the island element, remounting the whole tree).
 	const treeRoot = vdomChildren( root )[ 0 ] ?? root;
