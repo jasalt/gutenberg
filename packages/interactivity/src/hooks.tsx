@@ -409,6 +409,22 @@ options.diffed = ( vnode: any ) => {
 	const dom = vnode?.__e;
 	if ( typeof vnode?.type === 'string' && dom ) {
 		elementToVnode.set( dom, vnode );
+
+		// When Preact skips diffing an element (a reused vnode with the same
+		// `_original`), it hands the old `_children` to the new vnode without
+		// re-pointing their `_parent`, unlike its component bailout. The
+		// descendants would then chain to the previous tree, and `renderHTML`
+		// could not locate them. Re-point them; only the first child needs
+		// checking, since the whole array is either fresh or reused.
+		const children: any[] | undefined = vnode.__k;
+		const first = children?.find( Boolean );
+		if ( first && first.__ !== vnode ) {
+			for ( const child of children! ) {
+				if ( child ) {
+					child.__ = vnode;
+				}
+			}
+		}
 	}
 
 	if ( oldDiffed ) {

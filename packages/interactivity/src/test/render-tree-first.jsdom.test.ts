@@ -666,6 +666,71 @@ describe( 'element→vnode map', () => {
 		await flush();
 		expect( outer?.textContent ).toContain( 'ok' );
 	} );
+
+	it( 'locates a container nested in a plain sibling after a splice elsewhere', async () => {
+		// The plain wrapper has no directives, so the first splice reuses its
+		// vnode via Preact's element bailout, which does not re-point the
+		// wrapper's children to the new vnode.
+		await setup(
+			'<ul data-testid="a"></ul>' + '<div><ul data-testid="b"></ul></div>'
+		);
+		renderHTML( '[data-testid="a"]', '<li>1</li>' );
+		renderHTML( '[data-testid="b"]', '<li>2</li>' );
+		await flush();
+		expect(
+			document.querySelector( '[data-testid="a"]' )?.textContent
+		).toBe( '1' );
+		expect(
+			document.querySelector( '[data-testid="b"]' )?.textContent
+		).toBe( '2' );
+	} );
+
+	it( 'locates a container nested inside an item that existed before an append', async () => {
+		// "Load more" into the feed, then add a comment to the first item.
+		await setup(
+			'<div data-testid="feed">' +
+				'<article><div><ul data-testid="comments-0"></ul></div></article>' +
+				'</div>'
+		);
+		renderHTML(
+			'[data-testid="feed"]',
+			'<article><div><ul data-testid="comments-1"></ul></div></article>'
+		);
+		renderHTML( '[data-testid="comments-0"]', '<li>comment</li>' );
+		await flush();
+		expect(
+			document.querySelector( '[data-testid="comments-0"]' )?.textContent
+		).toBe( 'comment' );
+		expect(
+			document.querySelectorAll( '[data-testid="feed"] > article' )
+		).toHaveLength( 2 );
+	} );
+
+	it( 'walks the _parent chain to the island from a descendant of a reused plain element', async () => {
+		await setup(
+			'<ul data-testid="a"></ul>' +
+				'<div><span><b data-testid="deep">x</b></span></div>'
+		);
+		renderHTML( '[data-testid="a"]', '<li>1</li>' );
+		await flush();
+		// The walk must reach the CURRENT island vnode, not the vnode that
+		// rendered the island element before the splice.
+		const islandVnode = elementToVnode.get(
+			document.querySelector( '[data-wp-interactive]' )!
+		);
+		let vnode: any = elementToVnode.get(
+			document.querySelector( '[data-testid="deep"]' )!
+		);
+		let reachedIsland = false;
+		for ( let i = 0; vnode && i < 10; i += 1 ) {
+			if ( vnode === islandVnode ) {
+				reachedIsland = true;
+				break;
+			}
+			vnode = vdomParent( vnode );
+		}
+		expect( reachedIsland ).toBe( true );
+	} );
 } );
 
 // Every item carries a context id + data-wp-init that tallies into
