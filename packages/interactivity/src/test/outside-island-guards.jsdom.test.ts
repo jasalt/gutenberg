@@ -105,6 +105,52 @@ describe( 'renderHTML outside any island', () => {
 		( globalThis as { SCRIPT_DEBUG?: boolean } ).SCRIPT_DEBUG = false;
 		expect( document.querySelector( '[data-testid="p"]' ) ).toBeNull();
 	} );
+
+	it( 'hydrates every island in the HTML, not only the first', async () => {
+		document.body.innerHTML = '<div data-testid="host"></div>';
+		renderHTML(
+			'[data-testid="host"]',
+			`<div data-wp-interactive="${ NS }">
+				<button data-testid="a" data-wp-on--click="actions.setChanged">a</button>
+			</div>
+			<div data-wp-interactive="${ NS }">
+				<span data-testid="b" data-wp-text="state.text">initial</span>
+			</div>`
+		);
+		await flush();
+
+		// Clicking in the first island updates the text in the second one,
+		// which only happens if both were hydrated.
+		(
+			document.querySelector( '[data-testid="a"]' ) as HTMLButtonElement
+		 ).click();
+		await flush();
+		expect(
+			document.querySelector( '[data-testid="b"]' )?.textContent
+		).toBe( 'changed' );
+	} );
+
+	it( 'hydrates islands nested inside plain wrappers in the HTML', async () => {
+		document.body.innerHTML = '<div data-testid="host"></div>';
+		renderHTML(
+			'[data-testid="host"]',
+			`<div class="card">
+				<div data-wp-interactive="${ NS }">
+					<button data-testid="a" data-wp-on--click="actions.setChanged">a</button>
+					<span data-testid="b" data-wp-text="state.text">initial</span>
+				</div>
+			</div>`
+		);
+		await flush();
+
+		(
+			document.querySelector( '[data-testid="a"]' ) as HTMLButtonElement
+		 ).click();
+		await flush();
+		expect(
+			document.querySelector( '[data-testid="b"]' )?.textContent
+		).toBe( 'changed' );
+	} );
 } );
 
 describe( 'HTML-island fallback honors mode', () => {
