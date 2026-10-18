@@ -12,7 +12,6 @@ import { store } from '../store';
 import { getContext } from '../scopes';
 import '../directives'; // Registers all the core directives.
 import { renderHTML } from '../render';
-import { elementToVnode } from '../hooks';
 import { hydrateRegions } from '../hydration';
 
 const NS = 'test/tree-first';
@@ -584,58 +583,8 @@ describe( 'text nodes in mixed content', () => {
 	} );
 } );
 
-describe( 'element→vnode map', () => {
-	const vdomParent = ( vnode: any ): any => vnode?.__ ?? null;
-	const vdomDom = ( vnode: any ): Node | null => vnode?.__e ?? null;
-
-	it( 'maps every rendered element to its vnode after initial hydration', async () => {
-		await setup(
-			'<div data-testid="a"><span data-testid="b"></span></div>'
-		);
-		expect(
-			elementToVnode.get( document.querySelector( '[data-testid="a"]' )! )
-		).toBeDefined();
-		expect(
-			elementToVnode.get( document.querySelector( '[data-testid="b"]' )! )
-		).toBeDefined();
-	} );
-
-	it( 'maps elements spliced in by renderHTML', async () => {
-		await setup( '<div data-testid="feed"></div>' );
-		renderHTML( '[data-testid="feed"]', '<p data-testid="p">x</p>' );
-		await flush();
-		expect(
-			elementToVnode.get( document.querySelector( '[data-testid="p"]' )! )
-		).toBeDefined();
-	} );
-
-	it( 'walks the _parent chain from a spliced element through the Directives wrapper to the island vnode', async () => {
-		await setup(
-			'<div data-testid="feed" data-wp-context=\'{ "n": 42 }\'></div>'
-		);
-		renderHTML(
-			'[data-testid="feed"]',
-			'<span data-testid="ctx" data-wp-text="context.n"></span>'
-		);
-		await flush();
-		const ctx = document.querySelector( '[data-testid="ctx"]' )!;
-		// The spliced content is wrapped in a Directives chain (data-wp-text
-		// is a directive) — the chain must climb through it to the island
-		// vnode, whose DOM node is the island element.
-		const island = document.querySelector( '[data-wp-interactive]' );
-		let vnode: any = elementToVnode.get( ctx );
-		let reachedIsland = false;
-		for ( let i = 0; vnode && i < 10; i += 1 ) {
-			if ( vdomDom( vnode ) === island ) {
-				reachedIsland = true;
-				break;
-			}
-			vnode = vdomParent( vnode );
-		}
-		expect( reachedIsland ).toBe( true );
-	} );
-
-	it( 'rejects a stale entry for an element removed by a splice and re-inserted raw', async () => {
+describe( 'container lookup', () => {
+	it( 'does not locate an element removed by a splice and re-inserted raw', async () => {
 		await setup(
 			'<div data-testid="outer"><div data-testid="victim">v</div></div>'
 		);
@@ -648,9 +597,9 @@ describe( 'element→vnode map', () => {
 		expect( outer?.children.length ).toBe( 1 );
 		expect( outer?.children[ 0 ]?.textContent ).toBe( 'new' );
 
-		// Raw re-insertion of the removed element (unsupported territory, but
-		// its map entry survives) — renderHTML must reject the stale vnode
-		// instead of corrupting the tree.
+		// Raw re-insertion of the removed element (unsupported territory):
+		// the element is in the DOM but not in the tree, so renderHTML must
+		// not find it instead of corrupting the tree.
 		outer?.appendChild( victim as Node );
 		// eslint-disable-next-line @wordpress/wp-global-usage
 		( globalThis as { SCRIPT_DEBUG?: boolean } ).SCRIPT_DEBUG = true;
@@ -665,6 +614,58 @@ describe( 'element→vnode map', () => {
 		renderHTML( '[data-testid="outer"]', '<p>ok</p>' );
 		await flush();
 		expect( outer?.textContent ).toContain( 'ok' );
+	} );
+
+	it( 'locates a container nested in a plain sibling after a splice elsewhere', async () => {
+		// The plain wrapper has no directives, so the first splice reuses its
+		// vnode via Preact's element bailout.
+		await setup(
+			'<ul data-testid="a"></ul>' + '<div><ul data-testid="b"></ul></div>'
+		);
+		renderHTML( '[data-testid="a"]', '<li>1</li>' );
+		renderHTML( '[data-testid="b"]', '<li>2</li>' );
+		await flush();
+		expect(
+			document.querySelector( '[data-testid="a"]' )?.textContent
+		).toBe( '1' );
+		expect(
+			document.querySelector( '[data-testid="b"]' )?.textContent
+		).toBe( '2' );
+	} );
+
+	it( 'locates a container nested inside an item that existed before an append', async () => {
+		// "Load more" into the feed, then add a comment to the first item.
+		await setup(
+			'<div data-testid="feed">' +
+				'<article><div><ul data-testid="comments-0"></ul></div></article>' +
+				'</div>'
+		);
+		renderHTML(
+			'[data-testid="feed"]',
+			'<article><div><ul data-testid="comments-1"></ul></div></article>'
+		);
+		renderHTML( '[data-testid="comments-0"]', '<li>comment</li>' );
+		await flush();
+		expect(
+			document.querySelector( '[data-testid="comments-0"]' )?.textContent
+		).toBe( 'comment' );
+		expect(
+			document.querySelectorAll( '[data-testid="feed"] > article' )
+		).toHaveLength( 2 );
+	} );
+
+	it( 'locates a container rendered inside directive wrappers', async () => {
+		await setup(
+			'<div data-wp-context=\'{ "n": 1 }\'>' +
+				'<section data-wp-class--x="state.count"><ul data-testid="list"></ul></section>' +
+				'</div>'
+		);
+		renderHTML( '[data-testid="list"]', '<li>1</li>' );
+		renderHTML( '[data-testid="list"]', '<li>2</li>' );
+		await flush();
+		expect(
+			document.querySelector( '[data-testid="list"]' )?.textContent
+		).toBe( '12' );
 	} );
 } );
 

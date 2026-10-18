@@ -391,27 +391,3 @@ options.vnode = ( vnode: VNode< any > ) => {
 		old( vnode );
 	}
 };
-
-/**
- * Maps each rendered DOM element to its vnode, populated by the
- * `options.diffed` hook below (the vnode's `__e` IS the element).
- * `renderHTML` uses it for the O(1) container lookup, then walks `_parent`
- * pointers to the island root. Removed elements keep their entry until GC;
- * the walk in `render.ts` rejects stale entries (they no longer connect to
- * the current root).
- */
-export const elementToVnode = new WeakMap< Element, VNode< any > >();
-
-// Preact Options Hook called after each vnode is diffed into the DOM.
-// Chained so previously registered hooks keep running.
-const oldDiffed = options.diffed;
-options.diffed = ( vnode: any ) => {
-	const dom = vnode?.__e;
-	if ( typeof vnode?.type === 'string' && dom ) {
-		elementToVnode.set( dom, vnode );
-	}
-
-	if ( oldDiffed ) {
-		oldDiffed( vnode );
-	}
-};
