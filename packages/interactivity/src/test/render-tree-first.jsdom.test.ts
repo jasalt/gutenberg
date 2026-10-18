@@ -1298,3 +1298,37 @@ describe( 'auto-keys (id + synthetic): cross-splice, refresh, and dedup behavior
 		expect( island.children[ 1 ] ).toBe( sibEl );
 	} );
 } );
+
+describe( 'islands that are not hydrated yet', () => {
+	it( 'hydrates the island once when renderHTML runs before hydrateRegions', async () => {
+		// e.g. renderHTML called from another island's data-wp-init, or from
+		// a module that runs before hydration reaches this island.
+		document.body.innerHTML = `
+			<div data-wp-interactive="${ NS }">
+				<button data-testid="btn" data-wp-context='{ "id": "btn" }' data-wp-init="actions.initItem" data-wp-on--click="actions.inc">b</button>
+				<ul data-testid="list"></ul>
+			</div>
+		`;
+		state.count = 0;
+		state.initCounts = {};
+		renderHTML( '[data-testid="list"]', '<li>x</li>' );
+		await hydrateRegions();
+		await flush();
+
+		expect( state.initCounts ).toEqual( { btn: 1 } );
+		expect(
+			document.querySelector( '[data-testid="list"]' )?.textContent
+		).toBe( 'x' );
+		(
+			document.querySelector( '[data-testid="btn"]' ) as HTMLButtonElement
+		 ).click();
+		expect( state.count ).toBe( 1 );
+
+		// The on-demand hydration keeps the island usable for later splices.
+		renderHTML( '[data-testid="list"]', '<li>y</li>' );
+		await flush();
+		expect(
+			document.querySelector( '[data-testid="list"]' )?.textContent
+		).toBe( 'xy' );
+	} );
+} );

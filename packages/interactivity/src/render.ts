@@ -9,7 +9,7 @@ import {
 } from 'preact';
 import { toVdom } from './vdom';
 import { Directives, elementToVnode, isDefaultDirectiveSuffix } from './hooks';
-import { getRegionRootFragment } from './hydration';
+import { getRegionRootFragment, hydrateRegion } from './hydration';
 import { routerRegions } from './directives/router-region';
 import { warn } from './utils';
 
@@ -285,8 +285,10 @@ const spliceIntoTree = (
 	let root = getFragmentRoot( fragment );
 	if ( ! root ) {
 		// The island has no tree yet (not hydrated): adopt the existing DOM —
-		// the only sanctioned adoption path, a fragment's first render.
-		hydrate( toVdom( island ) as VNode, fragment as ContainerNode );
+		// the only sanctioned adoption path, a fragment's first render. Going
+		// through `hydrateRegion` marks the island as hydrated, so
+		// `hydrateRegions` skips it instead of hydrating it a second time.
+		hydrateRegion( island );
 		root = getFragmentRoot( fragment );
 	}
 	if ( ! root ) {
