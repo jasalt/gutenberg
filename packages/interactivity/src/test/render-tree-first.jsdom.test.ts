@@ -190,6 +190,39 @@ describe( 'renderHTML (tree-first)', () => {
 		expect( wrap?.children[ 0 ]?.textContent ).toBe( 'new' );
 	} );
 
+	it( 'clears the container with empty HTML when mode is "inner"', async () => {
+		await setup(
+			'<div data-testid="feed"><p data-wp-on--click="actions.inc">a</p>text</div>'
+		);
+		renderHTML( '[data-testid="feed"]', '', { mode: 'inner' } );
+		await flush();
+		expect(
+			document.querySelector( '[data-testid="feed"]' )?.childNodes
+		).toHaveLength( 0 );
+	} );
+
+	it( 'removes the container with empty HTML when mode is "replace"', async () => {
+		await setup(
+			'<div data-testid="wrap"><div data-testid="target">old</div><p>keep</p></div>'
+		);
+		renderHTML( '[data-testid="target"]', '', { mode: 'replace' } );
+		await flush();
+		expect( document.querySelector( '[data-testid="target"]' ) ).toBeNull();
+		expect(
+			document.querySelector( '[data-testid="wrap"]' )?.textContent
+		).toBe( 'keep' );
+	} );
+
+	it( 'leaves the container untouched with empty HTML in insertion modes', async () => {
+		await setup( '<div data-testid="feed"><p>a</p></div>' );
+		renderHTML( '[data-testid="feed"]', '' );
+		renderHTML( '[data-testid="feed"]', '', { mode: 'prepend' } );
+		await flush();
+		expect(
+			document.querySelector( '[data-testid="feed"]' )?.innerHTML
+		).toBe( '<p>a</p>' );
+	} );
+
 	it( 'accepts a CSS selector for the container', async () => {
 		await setup( '<div id="feed"></div>' );
 		renderHTML( '#feed', '<p>hi</p>' );
