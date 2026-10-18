@@ -1298,3 +1298,41 @@ describe( 'auto-keys (id + synthetic): cross-splice, refresh, and dedup behavior
 		expect( island.children[ 1 ] ).toBe( sibEl );
 	} );
 } );
+
+describe( 'context provider value across splices', () => {
+	const CONTEXT_NS = 'test/tree-first-context';
+	let renders = 0;
+	store( CONTEXT_NS, {
+		callbacks: {
+			// Not reactive: counts how many times the directive is rendered.
+			countRender() {
+				renders += 1;
+				return 'x';
+			},
+		},
+	} );
+
+	it( 'a splice below a data-wp-context ancestor does not re-render unrelated descendants', async () => {
+		const others = Array.from(
+			{ length: 20 },
+			() => '<p data-wp-text="callbacks.countRender"></p>'
+		).join( '' );
+		document.body.innerHTML = `
+			<div data-wp-interactive="${ CONTEXT_NS }" data-wp-context='{ "a": 1 }'>
+				<div>${ others }</div>
+				<ul data-testid="list"></ul>
+			</div>
+		`;
+		await hydrateRegions();
+		await flush();
+		renders = 0;
+
+		renderHTML( '[data-testid="list"]', '<li>x</li>' );
+		await flush();
+
+		expect(
+			document.querySelector( '[data-testid="list"]' )?.textContent
+		).toBe( 'x' );
+		expect( renders ).toBe( 0 );
+	} );
+} );
