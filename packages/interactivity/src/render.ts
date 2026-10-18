@@ -527,7 +527,10 @@ export function renderHTML(
 	const nodes = Array.from( template.content.childNodes ) as Array<
 		Element | Text
 	>;
-	if ( ! nodes.length ) {
+	// Empty HTML has nothing to insert, but `inner` still clears the
+	// container and `replace` still removes it (like `innerHTML = ''` and
+	// `remove()`), e.g. for a server response that clears a list.
+	if ( ! nodes.length && mode !== 'inner' && mode !== 'replace' ) {
 		return;
 	}
 
