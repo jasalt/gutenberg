@@ -1,10 +1,8 @@
 /**
- * Tree-first renderHTML outcome tests.
+ * renderHTML outcome tests.
  *
  * These assert BEHAVIOR ONLY — the "what must be true" spec that any correct
- * implementation must satisfy. Mechanism tests (per-node fragments, stale
- * trees, overlapping sets) are intentionally NOT ported from the previous
- * iteration: they test failure modes that cannot occur in tree-first.
+ * implementation must satisfy.
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -494,9 +492,9 @@ describe( 'nested islands (targeting a container inside one)', () => {
 		);
 		await flush();
 
-		// RED pre-fix: spliceIntoTree uses the NEAREST island (the nested one)
-		// as the tree owner, creating a SECOND fragment and hydrating the
-		// nested island again — re-running its data-wp-init.
+		// Using the NEAREST island (the nested one) as the tree owner would
+		// create a SECOND fragment and hydrate the nested island again,
+		// re-running its data-wp-init.
 		expect( nestedState.initCount ).toBe( 1 );
 
 		// The inserted button is interactive.
@@ -738,8 +736,9 @@ describe( 'data-wp-key and list identity across modes', () => {
 		renderHTML( feed, unkeyedItem( 'new', 'new' ), { mode: 'prepend' } );
 		await flush();
 
-		// RED pre-mechanism: the new item was absorbed into `a`'s element
-		// (held ref rendered 'new', init swallowed) and `b` re-initialized.
+		// Without the synthetic key, the new item would be absorbed into
+		// `a`'s element (held ref rendered 'new', init swallowed) and `b`
+		// would re-initialize.
 		expect( feed.children.length ).toBe( 3 );
 		expect( feed.children[ 0 ]?.textContent ).toBe( 'new' );
 		expect( feed.children[ 1 ] ).toBe( aEl );
@@ -817,7 +816,8 @@ describe( 'data-wp-key and list identity across modes', () => {
 		renderHTML( bEl, unkeyedItem( 'x', 'x' ), { mode: 'before' } );
 		await flush();
 
-		// RED pre-mechanism: `b`'s element absorbed 'x', `c` re-initialized.
+		// Without the synthetic key, `b`'s element would absorb 'x' and `c`
+		// would re-initialize.
 		expect( [ ...feed.children ].map( ( c ) => c.textContent ) ).toEqual( [
 			'a',
 			'x',

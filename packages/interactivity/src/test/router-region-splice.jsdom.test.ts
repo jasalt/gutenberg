@@ -3,7 +3,7 @@
  *
  * The `router-region` directive renders `routerRegions.get( id ).value` as
  * the region's children. After a navigation the signal holds the region
- * vnode; a `renderHTML` splice rebuilds the TREE path (§3) — but the path
+ * vnode; a `renderHTML` splice rebuilds the TREE path — but the path
  * rebuild RE-CREATES the region's `Directives` wrapper, whose render re-runs
  * the `router-region` callback and re-reads the signal. Without a
  * write-through, the signal still holds the PRE-splice vnode, so preact

@@ -5,7 +5,7 @@ import { test, expect } from './fixtures';
 // runs for every variant: `data-wp-key` (the user key `renderHTML`
 // prefers), `id` (its fallback), or neither (`none` — synthetic keys only,
 // applied at splice time). The `id`/`none` variants are EXPECTED failures:
-// only `data-wp-key` survives router navigation (plan.md §9).
+// only `data-wp-key` survives router navigation.
 //
 // Why the split: `data-wp-key` is read into `vnode.key` at PARSE time
 // (the `options.vnode` hook in hooks.tsx), so keyed cards are keyed in the
@@ -242,12 +242,12 @@ test.describe( 'activity feed', () => {
 				// Only `data-wp-key` survives router navigation: unkeyed
 				// cards (id or none) are reused positionally by the router,
 				// so their init never re-runs and their context carries
-				// over (state preservation — plan.md §9). These variants are
+				// over (state preservation). These variants are
 				// EXPECTED failures demonstrating that limitation; if they
 				// ever pass, the limitation is gone.
 				test.fail(
 					identity !== 'data-wp-key',
-					'router navigation does not remount unkeyed cards (plan.md §9)'
+					'router navigation does not remount unkeyed cards'
 				);
 				await browseFeed( page );
 			} );
