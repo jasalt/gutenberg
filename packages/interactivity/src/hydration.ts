@@ -31,6 +31,34 @@ export const initialVdomPromise = new Promise<
 	resolveInitialVdom = resolve;
 } );
 
+// Top-level islands that were already hydrated, either by `hydrateRegions` or
+// on demand (e.g. `renderHTML` targeting an island before `hydrateRegions`
+// reached it).
+const hydratedRegions = new WeakSet< Element >();
+
+/**
+ * Hydrates a top-level interactive island unless it was already hydrated, and
+ * records its initial vDOM for the router.
+ *
+ * @param node The island element.
+ * @param vdom The island's vDOM, if already computed.
+ * @return Whether the island was hydrated by this call.
+ */
+export const hydrateRegion = (
+	node: Element,
+	vdom?: ComponentChild
+): boolean => {
+	if ( hydratedRegions.has( node ) ) {
+		return false;
+	}
+	hydratedRegions.add( node );
+	const fragment = getRegionRootFragment( node );
+	const regionVdom = vdom ?? toVdom( node );
+	initialVdom.set( node, regionVdom );
+	hydrate( regionVdom, fragment );
+	return true;
+};
+
 /**
  * Hydrates the document's top-level interactive islands and initializes the
  * router's initial vDOM. Islands without an interactive ancestor are selected
@@ -48,11 +76,13 @@ export const hydrateRegions = async () => {
 
 	for ( const node of nodes ) {
 		await splitTask();
-		const fragment = getRegionRootFragment( node );
+		if ( hydratedRegions.has( node ) ) {
+			continue;
+		}
 		const vdom = toVdom( node );
-		initialVdom.set( node, vdom );
 		await splitTask();
-		hydrate( vdom, fragment );
+		// No-op if the island was hydrated on demand during the yield.
+		hydrateRegion( node, vdom );
 	}
 
 	// Resolve the promise with the fully populated initialVdom after all regions are hydrated.
